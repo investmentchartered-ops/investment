@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Admin Investments - Chartered Investment Company</title>
+
+<style>
+  body {
+    margin:0;
+    font-family: Arial, sans-serif;
+    background:#FFECCC;
+    color:#5E1010;
+  }
+
+  header {
+    background:#5E1010;
+    color:#FFECCC;
+    padding:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  header h1 { margin:0; font-size:24px; }
+  header button {
+    background:#FFECCC;
+    color:#5E1010;
+    border:none;
+    padding:10px 20px;
+    border-radius:6px;
+    cursor:pointer;
+    font-weight:bold;
+  }
+
+  /* Layout */
+  .container {
+    max-width:1200px;
+    margin:20px auto;
+    padding:0 20px;
+  }
+
+  /* USERS LIST NOW VERTICAL */
+  .users-list {
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+
+  .user-card {
+    width:80%;
+    background:#fff;
+    border:2px solid #5E1010;
+    border-radius:12px;
+    padding:15px;
+    cursor:pointer;
+    transition:0.2s;
+  }
+  .user-card:hover { transform:translateY(-3px); }
+  .user-card.selected { background:#5E1010; color:#FFECCC; }
+
+  /* Investments grid */
+  .investments-grid {
+    margin-top:20px;
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+    gap:15px;
+  }
+
+  .investment-card {
+    background:white;
+    border:2px solid #5E1010;
+    border-radius:12px;
+    padding:10px;
+    cursor:pointer;
+    transition:0.2s;
+  }
+  .investment-card:hover { transform:translateY(-4px); }
+
+  .status {
+    font-weight:bold;
+    text-transform:capitalize;
+  }
+  .status.active { color:green; }
+  .status.paused { color:orange; }
+  .status.completed { color:gray; }
+
+  /* Hide section when user selected */
+  #investmentsSection.hidden,
+  #usersList.hidden {
+    display:none;
+  }
+
+  /* Back Button */
+  #backBtn {
+    display:none;
+    background:#5E1010;
+    color:#FFECCC;
+    padding:8px 12px;
+    border-radius:8px;
+    width:max-content;
+    cursor:pointer;
+    margin-bottom:20px;
+    font-weight:bold;
+  }
+
+  /* Glassmorphism Modal */
+  #modalOverlay {
+    display:none;
+    position:fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    background:rgba(0,0,0,0.4);
+    backdrop-filter:blur(8px);
+    z-index:9999;
+    justify-content:center;
+    align-items:center;
+  }
+
+  #modal {
+    width:90%;
+    max-width:420px;
+    background:rgba(255,255,255,0.2);
+    border:1px solid rgba(255,255,255,0.3);
+    backdrop-filter:blur(15px);
+    box-shadow:0 8px 30px rgba(0,0,0,0.3);
+    border-radius:20px;
+    padding:25px;
+    color:#5E1010;
+    animation:popIn 0.25s ease;
+  }
+
+  @keyframes popIn {
+    from { transform:scale(0.8); opacity:0; }
+    to { transform:scale(1); opacity:1; }
+  }
+
+  .modal-close {
+    float:right;
+    cursor:pointer;
+    font-size:22px;
+    font-weight:bold;
+  }
+
+  .modal-actions button {
+    width:100%;
+    margin-top:10px;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    font-size:16px;
+    cursor:pointer;
+    font-weight:bold;
+  }
+
+  .btn-toggle { background:#ffc107; color:#5E1010; }
+  .btn-complete { background:#28a745; color:white; }
+  .btn-disabled { background:#ccc; color:#555; cursor:not-allowed; }
+
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>Admin Investment Dashboard</h1>
+  <button id="logoutBtn">Logout</button>
+</header>
+
+<div class="container">
+
+  <!-- BACK BUTTON APPEARS WHEN USER IS SELECTED -->
+  <div id="backBtn" onclick="goBack()">⬅ Back to Users</div>
+
+  <div class="users-list" id="usersList"></div>
+
+  <h2 id="selectedUserName">Select a user</h2>
+
+  <div class="investments-grid" id="investmentsGrid"></div>
+
+</div>
+
+<!-- Glassmorphism Modal -->
+<div id="modalOverlay">
+  <div id="modal">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h2>Investment Details</h2>
+    <div id="modalContent"></div>
+
+    <div class="modal-actions">
+      <button id="toggleBtn" class="btn-toggle"></button>
+      <button id="completeBtn" class="btn-complete">Complete Investment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const backend = "https://investment-9ub4.onrender.com/api/admin";
+const token = localStorage.getItem("token");
+
+function fmt(n){ return Number(n).toLocaleString(undefined,{maximumFractionDigits:2}); }
+
+/* Logout */
+document.getElementById("logoutBtn").onclick = () =>{
+  localStorage.removeItem("token");
+  window.location.href="index.html";
+};
+
+let selectedUserId = null;
+let currentInvestment = null;
+
+/* Fetch Users */
+async function fetchUsers(){
+  try{
+    const res = await fetch(`${backend}/users`, {
+      headers:{ 'Authorization':`Bearer ${token}` }
+    });
+    const data = await res.json();
+    if(res.ok) renderUsers(data.users);
+    else alert(data.message);
+  } catch(e){
+    alert("Network error");
+  }
+}
+
+function renderUsers(users){
+  const list = document.getElementById("usersList");
+  list.innerHTML="";
+
+  users.forEach(user=>{
+    const el = document.createElement("div");
+    el.className="user-card";
+    el.innerHTML = `<strong>${user.firstName} ${user.lastName}</strong><br>${user.email}`;
+    el.onclick = ()=> selectUser(user._id, `${user.firstName} ${user.lastName}`, el);
+    list.appendChild(el);
+  });
+}
+
+/* Select user */
+async function selectUser(id, name, card){
+  selectedUserId = id;
+
+  // hide user list
+  document.getElementById("usersList").style.display = "none";
+  document.getElementById("backBtn").style.display = "block";
+
+  document.getElementById("selectedUserName").innerText = name;
+
+  fetchInvestments(id);
+}
+
+/* Go back */
+function goBack(){
+  document.getElementById("usersList").style.display = "flex";
+  document.getElementById("backBtn").style.display = "none";
+
+  document.getElementById("selectedUserName").innerText = "Select a user";
+  document.getElementById("investmentsGrid").innerHTML = "";
+}
+
+/* Fetch Investments */
+async function fetchInvestments(userId){
+  try{
+    const res = await fetch(`${backend}/investments?userId=${userId}`, {
+      headers:{ 'Authorization':`Bearer ${token}` }
+    });
+    const data = await res.json();
+    if(res.ok) renderInvestments(data.investments);
+    else alert(data.message);
+  } catch(e){ alert("Error loading investments"); }
+}
+
+/* Render investments */
+function renderInvestments(investments){
+  const grid = document.getElementById("investmentsGrid");
+  grid.innerHTML="";
+
+  investments.forEach(inv=>{
+    const card = document.createElement("div");
+    card.className="investment-card";
+    card.innerHTML = `
+      <h3>$${fmt(inv.capital)}</h3>
+      <p>Term: ${inv.term}</p>
+      <p>Status: <span class="status ${inv.status}">${inv.status}</span></p>
+    `;
+    card.onclick = ()=> openModal(inv);
+    grid.appendChild(card);
+  });
+}
+
+/* Open Modal */
+function openModal(inv){
+  currentInvestment = inv;
+  document.getElementById("modalOverlay").style.display="flex";
+
+  const termDays = inv.term==="short"?25:inv.term==="medium"?40:60;
+  const dailyProfit = inv.capital * (inv.profitPercentage/100);
+  const totalProfit = dailyProfit * termDays;
+  const expectedReturn = inv.capital + totalProfit;
+
+  document.getElementById("modalContent").innerHTML = `
+    <p><strong>Capital:</strong> $${fmt(inv.capital)}</p>
+    <p><strong>Term:</strong> ${inv.term}</p>
+    <p><strong>Daily Profit:</strong> $${fmt(dailyProfit)}</p>
+    <p><strong>Total Profit:</strong> $${fmt(totalProfit)}</p>
+    <p><strong>Expected Return:</strong> $${fmt(expectedReturn)}</p>
+    <p><strong>Status:</strong> <span class="status ${inv.status}">${inv.status}</span></p>
+    <p><strong>Start Date:</strong> ${new Date(inv.startDate).toLocaleDateString()}</p>
+  `;
+
+  const toggleBtn = document.getElementById("toggleBtn");
+  toggleBtn.textContent = inv.status === "active" ? "Pause Investment" : "Activate Investment";
+
+  document.getElementById("completeBtn").disabled = inv.status === "completed";
+  document.getElementById("completeBtn").className =
+      inv.status === "completed" ?
+      "btn-disabled" :
+      "btn-complete";
+}
+
+function closeModal(){
+  document.getElementById("modalOverlay").style.display="none";
+}
+
+document.getElementById("toggleBtn").onclick = toggleInvestment;
+document.getElementById("completeBtn").onclick = completeInvestment;
+
+async function toggleInvestment(){
+  const newStatus = currentInvestment.status === "active" ? "paused" : "active";
+
+  const res = await fetch(`${backend}/investments/${currentInvestment._id}/status`, {
+    method:"PATCH",
+    headers:{ "Authorization":`Bearer ${token}`, "Content-Type":"application/json" },
+    body:JSON.stringify({ status:newStatus })
+  });
+
+  if(res.ok){
+    closeModal();
+    fetchInvestments(selectedUserId);
+  }
+}
+
+async function completeInvestment(){
+  if(!confirm("Complete this investment?")) return;
+
+  const res = await fetch(`${backend}/investments/${currentInvestment._id}/complete`, {
+    method:"PATCH",
+    headers:{ "Authorization":`Bearer ${token}` }
+  });
+
+  if(res.ok){
+    closeModal();
+    fetchInvestments(selectedUserId);
+  }
+}
+
+/* Init */
+fetchUsers();
+</script>
+
+</body>
+</html>
