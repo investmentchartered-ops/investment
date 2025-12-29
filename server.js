@@ -140,13 +140,8 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Registration
 // Expects multipart/form-data with fields + files:
 // files named: idFront, idBack, selfie
-app.post('/api/register', upload.fields([
-  { name: 'idFront', maxCount: 1 },
-  { name: 'idBack', maxCount: 1 },
-  { name: 'selfie', maxCount: 1 }
-]), async (req, res) => {
+app.post('/api/register', async (req, res) => {
   try {
-    // Basic form fields
     const {
       firstName, lastName, email, phone, dob,
       street = '', city = '', state = '', zip = '',
@@ -157,69 +152,32 @@ app.post('/api/register', upload.fields([
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Check if already registered
     const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: 'Email already registered' });
+    if (existing)
+      return res.status(400).json({ message: 'Email already registered' });
 
-    // Upload files to Cloudinary (if present)
-    const files = req.files || {};
-    const uploads = {};
-
-    if (files.idFront && files.idFront[0]) {
-      const f = files.idFront[0];
-      const name = `idFront_${Date.now()}`;
-      const result = await uploadBufferToCloudinary(f.buffer, name);
-      uploads.idFrontUrl = result.secure_url;
-    } else {
-      uploads.idFrontUrl = '';
-    }
-
-    if (files.idBack && files.idBack[0]) {
-      const f = files.idBack[0];
-      const name = `idBack_${Date.now()}`;
-      const result = await uploadBufferToCloudinary(f.buffer, name);
-      uploads.idBackUrl = result.secure_url;
-    } else {
-      uploads.idBackUrl = '';
-    }
-
-    if (files.selfie && files.selfie[0]) {
-      const f = files.selfie[0];
-      const name = `selfie_${Date.now()}`;
-      const result = await uploadBufferToCloudinary(f.buffer, name);
-      uploads.selfieUrl = result.secure_url;
-    } else {
-      uploads.selfieUrl = '';
-    }
-
-    // Create user (password stored as plain text per your instruction)
     const user = new User({
       firstName, lastName, email, phone, dob,
       street, city, state, zip,
       password,
-      idFrontUrl: uploads.idFrontUrl,
-      idBackUrl: uploads.idBackUrl,
-      selfieUrl: uploads.selfieUrl,
+      idFrontUrl: '',
+      idBackUrl: '',
+      selfieUrl: '',
       verified: false
     });
 
     await user.save();
 
     return res.json({
-      message: 'Registration successful. Identity verification in progress.',
+      message: 'Registration successful.',
       userId: user._id
     });
 
   } catch (err) {
-    console.error('Registration error:', err);
-    // handle duplicate key error gracefully
-    if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
-      return res.status(400).json({ message: 'Email already registered' });
-    }
-    return res.status(500).json({ message: 'Registration failed', error: err.message });
+    console.error(err);
+    return res.status(500).json({ message: 'Registration failed' });
   }
 });
-
 // --------------------------
 // Universal Login
 // --------------------------
@@ -232,31 +190,34 @@ app.post('/api/login', async (req, res) => {
     // Try User first
     let user = await User.findOne({ email });
     if (user && user.password === password) {
-      const token = jwt.sign(
-        { id: user._id, email: user.email, role: 'user' },
-        process.env.JWT_SECRET || 'CHANGE_THIS_SECRET',
-        { expiresIn: '3d' }
-      );
+  const token = jwt.sign(
+    { id: user._id, email: user.email, role: 'user' },
+    process.env.JWT_SECRET || 'CHANGE_THIS_SECRET',
+    { expiresIn: '3d' }
+  );
 
-      return res.json({
-        message: 'Login successful',
-        token,
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          verified: user.verified,
-          balance: user.balance || 0,
-          totalDeposit: user.totalDeposit || 0,
-          totalInvestment: user.totalInvestment || 0,
-          totalWithdrawal: user.totalWithdrawal || 0,
-          totalProfit: user.totalProfit || 0,
-          transactions: user.transactions || [],
-          role: 'user'
-        }
-      });
+  return res.json({
+    message: 'Login successful',
+    token,
+    user: {
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      verified: user.verified,
+      idFrontUrl: user.idFrontUrl || "",
+      idBackUrl: user.idBackUrl || "",
+      selfieUrl: user.selfieUrl || "",
+      balance: user.balance || 0,
+      totalDeposit: user.totalDeposit || 0,
+      totalInvestment: user.totalInvestment || 0,
+      totalWithdrawal: user.totalWithdrawal || 0,
+      totalProfit: user.totalProfit || 0,
+      transactions: user.transactions || [],
+      role: 'user'
     }
+  });
+}
 
     // Try Admin if not found in User
     const admin = await Admin.findOne({ email });
@@ -299,6 +260,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 
     res.json({
       user: {
+        id: user._id, // include user ID for frontend reference
         firstName: user.firstName,
         lastName: user.lastName,
         dob: user.dob,
@@ -309,15 +271,17 @@ app.get('/api/me', authMiddleware, async (req, res) => {
         state: user.state || '',
         zip: user.zip || '',
         selfieUrl: user.selfieUrl || '',
+        idFrontUrl: user.idFrontUrl || '', // added
+        idBackUrl: user.idBackUrl || '',   // added
         verified: user.verified,
-        balance: user.balance,
-        totalDeposit: user.totalDeposit,
-        totalInvestment: user.totalInvestment,
-        totalWithdrawal: user.totalWithdrawal,
-        totalProfit: user.totalProfit,
+        balance: user.balance || 0,
+        totalDeposit: user.totalDeposit || 0,
+        totalInvestment: user.totalInvestment || 0,
+        totalWithdrawal: user.totalWithdrawal || 0,
+        totalProfit: user.totalProfit || 0,
+        minDeposit: user.minDeposit || 0,
+        minWithdrawal: user.minWithdrawal || 0,
         transactions: user.transactions || [],
-        minDeposit: user.minDeposit,
-        minWithdrawal: user.minWithdrawal,
         investments: investments.map(inv => ({
           _id: inv._id,
           capital: inv.capital,
@@ -333,7 +297,6 @@ app.get('/api/me', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch user info' });
   }
 });
-
 
 // --------------------------
 // Admin Routes
@@ -626,49 +589,70 @@ res.json({ message:'User deleted' });
 // ==========================================
 // UPDATE PROFILE (User Only)
 // ==========================================
-app.put("/api/update-profile", authMiddleware, async (req, res) => {
-  try {
-    const allowedFields = [
-      "firstName",
-      "lastName",
-      "dob",
-      "phone",
-      "email",
-      "street",
-      "city",
-      "state",
-      "zip",
-      "selfie"   // <-- IMPORTANT: allow selfie updates
-    ];
+app.put(
+  "/api/update-profile",
+  authMiddleware,
+  upload.fields([
+    { name: "selfie", maxCount: 1 },
+    { name: "idFront", maxCount: 1 },
+    { name: "idBack", maxCount: 1 }
+  ]),
+  async (req, res) => {
+    try {
+      const allowedFields = [
+        "firstName",
+        "lastName",
+        "dob",
+        "phone",
+        "email",
+        "street",
+        "city",
+        "state",
+        "zip"
+      ];
 
-    const updates = {};
+      const updates = {};
 
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined && req.body[field] !== "") {
-        updates[field] = req.body[field];
+      // Regular fields
+      allowedFields.forEach(field => {
+        if (req.body[field] !== undefined && req.body[field] !== "") {
+          updates[field] = req.body[field];
+        }
+      });
+
+      // Uploaded files (selfie, idFront, idBack)
+      const files = req.files || {};
+      if (files.selfie && files.selfie[0]) {
+        const result = await uploadBufferToCloudinary(files.selfie[0].buffer, `selfie_${Date.now()}`);
+        updates.selfieUrl = result.secure_url;
       }
-    });
+      if (files.idFront && files.idFront[0]) {
+        const result = await uploadBufferToCloudinary(files.idFront[0].buffer, `idFront_${Date.now()}`);
+        updates.idFrontUrl = result.secure_url;
+      }
+      if (files.idBack && files.idBack[0]) {
+        const result = await uploadBufferToCloudinary(files.idBack[0].buffer, `idBack_${Date.now()}`);
+        updates.idBackUrl = result.secure_url;
+      }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user.id,
-      { $set: updates },
-      { new: true }
-    ).select("-password");
+      const updatedUser = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: updates },
+        { new: true }
+      ).select("-password");
 
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
+      if (!updatedUser) return res.status(404).json({ message: "User not found" });
+
+      return res.json({
+        message: "Profile updated successfully",
+        user: updatedUser
+      });
+    } catch (err) {
+      console.error("Update profile error:", err);
+      return res.status(500).json({ message: "Failed to update profile" });
     }
-
-    return res.json({
-      message: "Profile updated successfully",
-      user: updatedUser
-    });
-
-  } catch (err) {
-    console.error("Update profile error:", err);
-    return res.status(500).json({ message: "Failed to update profile" });
   }
-});
+);
 
 // --------------------------
 // Start server
