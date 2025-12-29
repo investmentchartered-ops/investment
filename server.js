@@ -600,4 +600,78 @@ app.get('/api/admin/investments/:id', authMiddleware, adminMiddleware, async (re
 // PATCH /api/admin/investments/:id/status
 app.patch('/api/admin/investments/:id/status', authMiddleware, adminMiddleware, async (req,res)=>{
   try{
-    const { status } = req.body; // expected 'acti
+    const { status } = req.body; // expected 'active' or 'paused'
+    const investment = await Investment.findById(req.params.id);
+    if(!investment) return res.status(404).json({ message: 'Investment not found' });
+
+    investment.status = status; 
+    await investment.save();
+
+    res.json({ message: `Investment ${status}`, investment });
+  } catch(err){
+    console.error(err);
+    res.status(500).json({ message:'Failed to update status', error:err.message });
+  }
+});
+
+// Delete user
+app.delete('/api/admin/user/:id', authMiddleware, adminMiddleware, async(req,res)=>{
+try{
+const user = await User.findByIdAndDelete(req.params.id);
+if(!user) return res.status(404).json({ message:'User not found' });
+res.json({ message:'User deleted' });
+} catch(e){ res.status(500).json({ message:'Failed to delete user', error:e.message }); }
+});
+
+// ==========================================
+// UPDATE PROFILE (User Only)
+// ==========================================
+app.put("/api/update-profile", authMiddleware, async (req, res) => {
+  try {
+    const allowedFields = [
+      "firstName",
+      "lastName",
+      "dob",
+      "phone",
+      "email",
+      "street",
+      "city",
+      "state",
+      "zip",
+      "selfie"   // <-- IMPORTANT: allow selfie updates
+    ];
+
+    const updates = {};
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined && req.body[field] !== "") {
+        updates[field] = req.body[field];
+      }
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updates },
+      { new: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      message: "Profile updated successfully",
+      user: updatedUser
+    });
+
+  } catch (err) {
+    console.error("Update profile error:", err);
+    return res.status(500).json({ message: "Failed to update profile" });
+  }
+});
+
+// --------------------------
+// Start server
+// --------------------------
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, ()=> console.log("Server running on port ${PORT}"));
