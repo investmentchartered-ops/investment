@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Admin Dashboard - Ann Investment Company</title>
+<title>Admin Dashboard - Chartered Investment Company</title>
 <style>
   header div {
   display: flex;
@@ -183,7 +183,7 @@
 
 <script>
 /* ---------- Config ---------- */
-const backend = "https://investment-9ub4.onrender.com/api/admin";
+const backend = "https://investment-tmlg.onrender.com/api/admin";
 const token = localStorage.getItem("token"); // Admin JWT token
 
 /* ---------- Helpers ---------- */
@@ -366,10 +366,10 @@ if (capital > 0) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      userId: currentUserId,   // VERY IMPORTANT
+      userId: currentUserId,   
       capital,
       term,
-      profitPercentage,        // backend expects this
+      profitPercentage,        
       startDate: new Date().toISOString()
     })
   });
@@ -400,7 +400,7 @@ $id('verifyBtn').onclick = async () => {
   if(!currentUserId) return;
   showLoader();
   try {
-    const res = await fetch(`https://investment-9ub4.onrender.com/api/users/${currentUserId}/verify`, {
+    const res = await fetch(`https://investment-tmlg.onrender.com/api/users/${currentUserId}/verify`, {
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${token}` }
     });
