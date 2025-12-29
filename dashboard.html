@@ -222,6 +222,19 @@ body { margin: 0; font-family: Arial, sans-serif; background: #FFECCC; color: #5
 
 </div>
 
+<!-- ACTION MODAL -->
+<div id="actionModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
+    background: rgba(0,0,0,0.7); justify-content:center; align-items:center; z-index:2000;">
+  <div style="background:#5E1010; color:#FFECCC; padding:20px; border-radius:12px; width:90%; max-width:400px; text-align:center;">
+    <h3 id="modalTitle">Enter Amount</h3>
+    <input type="number" id="modalAmount" placeholder="Enter amount" style="width:100%; padding:10px; margin:15px 0; border-radius:6px; border:1px solid #ccc;">
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button id="modalConfirm" style="padding:10px 20px; background:green; color:white; border:none; border-radius:6px; font-weight:bold;">Confirm</button>
+      <button id="modalCancel" style="padding:10px 20px; background:gray; color:white; border:none; border-radius:6px; font-weight:bold;">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="loadingOverlay"><div class="spinner"></div></div>
 
 <script>
@@ -231,145 +244,174 @@ const token = localStorage.getItem("token");
 const adminWhatsApp = "09122054068";
 
 /* REDIRECT IF NOT LOGGED IN */
-if(!token) window.location.href = "sign-in.html";
+if (!token) window.location.href = "sign-in.html";
 
 /* SIDEBAR */
+const sidebar = document.getElementById("sidebar");
+const sidebarOverlay = document.getElementById("sidebarOverlay");
+
 function openSidebar() {
-  document.getElementById("sidebar").style.left = "0";
-  document.getElementById("sidebarOverlay").style.display = "block";
+  sidebar.style.left = "0";
+  sidebarOverlay.style.display = "block";
 }
-
 function closeSidebar() {
-  document.getElementById("sidebar").style.left = "-250px";
-  document.getElementById("sidebarOverlay").style.display = "none";
+  sidebar.style.left = "-250px";
+  sidebarOverlay.style.display = "none";
 }
-
-// Only close if user taps OUTSIDE sidebar
-document.getElementById("sidebarOverlay").addEventListener("click", closeSidebar);
+sidebarOverlay.addEventListener("click", closeSidebar);
 
 /* LOGOUT */
-function logout(){
+function logout() {
   localStorage.removeItem("token");
   window.location.href = "index.html";
 }
 
 /* LOADER */
-function showLoader(){ document.getElementById("loadingOverlay").style.display="flex"; }
-function hideLoader(){ document.getElementById("loadingOverlay").style.display="none"; }
+function showLoader() { document.getElementById("loadingOverlay").style.display = "flex"; }
+function hideLoader() { document.getElementById("loadingOverlay").style.display = "none"; }
 
-/* USER DATA */
+/* GLOBALS */
+let currentUser = null;
 let minDeposit = 0;
 let minWithdrawal = 0;
+let currentAction = null;
 
-async function loadDashboard(){
-  showLoader();
-  try {
-    const res = await fetch(`${backend}/me`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    });
+/* WAIT FOR DOM */
+document.addEventListener("DOMContentLoaded", () => {
+  /* MODAL ELEMENTS */
+  const actionModal = document.getElementById("actionModal");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalAmount = document.getElementById("modalAmount");
+  const modalConfirm = document.getElementById("modalConfirm");
+  const modalCancel = document.getElementById("modalCancel");
 
-    const data = await res.json();
-    hideLoader();
+  function openModal(action) {
+    currentAction = action;
+    modalAmount.value = "";
+    if(action === "deposit") modalTitle.textContent = `Enter deposit amount (min $${minDeposit})`;
+    if(action === "invest") modalTitle.textContent = "Enter investment amount";
+    if(action === "withdraw") modalTitle.textContent = `Enter withdrawal amount (min $${minWithdrawal})`;
+    actionModal.style.display = "flex";
+  }
 
-    if(res.status === 401){
-      alert("Session expired. Please login again.");
-      logout();
+  function closeModalAction() {
+    actionModal.style.display = "none";
+    currentAction = null;
+  }
+
+  modalCancel.onclick = closeModalAction;
+
+  modalConfirm.onclick = () => {
+    const amountNum = Number(modalAmount.value);
+    if(!amountNum || isNaN(amountNum) || amountNum <= 0){
+      alert("Please enter a valid amount.");
       return;
     }
 
-    const user = data.user;
-
-    minDeposit = user.minDeposit || 0;
-    minWithdrawal = user.minWithdrawal || 0;
-
-    document.getElementById("welcomeUser").textContent =
-      `Welcome, ${user.firstName} ${user.lastName}`;
-
-    document.getElementById("currentBalance").textContent =
-      `$${(user.balance || 0).toLocaleString()}`;
-
-    document.getElementById("totalDeposit").textContent =
-      `$${(user.totalDeposit || 0).toLocaleString()}`;
-
-    document.getElementById("totalInvestment").textContent =
-      `$${(user.totalInvestment || 0).toLocaleString()}`;
-
-    document.getElementById("totalWithdrawal").textContent =
-      `$${(user.totalWithdrawal || 0).toLocaleString()}`;
-
-    document.getElementById("totalProfit").textContent =
-      `$${(user.totalProfit || 0).toLocaleString()}`;
-
-    const list = document.getElementById("transactionList");
-    list.innerHTML = "";
-
-    // Sort transactions newest first
-    (user.transactions || [])
-      .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
-      .forEach(t => {
-        const div = document.createElement("div");
-        div.className = "transaction-item";
-
-        const colorClass =
-          t.type === "deposit" ? "text-deposit" :
-          t.type === "profit" ? "text-profit" :
-          t.type === "investment" ? "text-invest" :
-          "text-withdraw";
-
-        div.innerHTML = `
-          <span class="${colorClass}">
-            ${t.type.toUpperCase()} — $${t.amount.toLocaleString()}
-          </span>
-          <span class="date">${new Date(t.date || t.createdAt).toLocaleString()}</span>
-        `;
-        list.appendChild(div);
-      });
-
-    attachActionButtons();
-  }
-  catch (e) {
-    hideLoader();
-    alert("Network error");
-  }
-}
-
-function attachActionButtons(){
-  document.getElementById("depositBtn").onclick = () => {
-    const amount = prompt(`Minimum deposit is $${minDeposit}. Enter deposit amount:`, minDeposit);
-    if(amount && Number(amount) >= minDeposit){
-      const msg = `Hello Admin, I want to deposit $${amount}.`;
-      window.open(`https://wa.me/${adminWhatsApp}?text=${encodeURIComponent(msg)}`);
-    }
-  };
-
-  document.getElementById("investBtn").onclick = () => {
-    const amount = prompt("Enter investment amount:");
-    if(amount){
-      const msg = `Hello Admin, I want to invest $${amount}.`;
-      window.open(`https://wa.me/${adminWhatsApp}?text=${encodeURIComponent(msg)}`);
-    }
-  };
-
-  document.getElementById("withdrawBtn").onclick = () => {
-    const currentBalance = Number(
-      document.getElementById("currentBalance").textContent.replace(/[^0-9.-]/g,"")
-    );
-
-    if(currentBalance < minWithdrawal){
-      alert(`Your balance is below minimum withdrawal amount: $${minWithdrawal}`);
+    if(currentAction === "deposit" && amountNum < minDeposit){
+      alert(`Deposit must be at least $${minDeposit}`);
       return;
     }
 
-    const amount = prompt(`Enter withdrawal amount (minimum $${minWithdrawal}):`);
+    if(currentAction === "withdraw"){
+  if(!currentUser.verified){
+    alert("You must be a verified user to withdraw.");
+    closeModalAction();
+    return;
+  }
 
-    if(amount && Number(amount) >= minWithdrawal){
-      const msg = `Hello Admin, I want to withdraw $${amount}.`;
-      window.open(`https://wa.me/${adminWhatsApp}?text=${encodeURIComponent(msg)}`);
-    }
-  };
+  if(!currentUser.idFrontUrl?.trim() || !currentUser.idBackUrl?.trim()){
+    alert("Please upload both ID front and back before withdrawing.");
+    closeModalAction();
+    return;
+  }
+
+  const currentBalance = Number(
+    document.getElementById("currentBalance").textContent.replace(/[^0-9.-]/g,"")
+  );
+  if(amountNum < minWithdrawal){
+    alert(`Minimum withdrawal is $${minWithdrawal}`);
+    return;
+  }
+  if(amountNum > currentBalance){
+    alert("Withdrawal amount exceeds your balance.");
+    return;
+  }
 }
 
-loadDashboard();
+    let msg = "";
+    if(currentAction === "deposit") msg = `Hello Admin, I want to deposit $${amountNum}.`;
+    if(currentAction === "invest") msg = `Hello Admin, I want to invest $${amountNum}.`;
+    if(currentAction === "withdraw") msg = `Hello Admin, I want to withdraw $${amountNum}.`;
+
+    window.open(`https://wa.me/${adminWhatsApp}?text=${encodeURIComponent(msg)}`);
+    closeModalAction();
+  };
+
+  /* ATTACH BUTTONS */
+  function attachActionButtons() {
+    document.getElementById("depositBtn").onclick = () => openModal("deposit");
+    document.getElementById("investBtn").onclick = () => openModal("invest");
+    document.getElementById("withdrawBtn").onclick = () => openModal("withdraw");
+  }
+
+  /* LOAD DASHBOARD */
+  async function loadDashboard() {
+    showLoader();
+    try {
+      const res = await fetch(`${backend}/me`, { headers: { "Authorization": `Bearer ${token}` } });
+      const data = await res.json();
+      hideLoader();
+
+      if (res.status === 401) {
+        alert("Session expired. Please login again.");
+        logout();
+        return;
+      }
+
+      currentUser = data.user;
+      minDeposit = currentUser.minDeposit || 0;
+      minWithdrawal = currentUser.minWithdrawal || 0;
+
+      document.getElementById("welcomeUser").textContent = `Welcome, ${currentUser.firstName} ${currentUser.lastName}`;
+      document.getElementById("currentBalance").textContent = `$${(currentUser.balance || 0).toLocaleString()}`;
+      document.getElementById("totalDeposit").textContent = `$${(currentUser.totalDeposit || 0).toLocaleString()}`;
+      document.getElementById("totalInvestment").textContent = `$${(currentUser.totalInvestment || 0).toLocaleString()}`;
+      document.getElementById("totalWithdrawal").textContent = `$${(currentUser.totalWithdrawal || 0).toLocaleString()}`;
+      document.getElementById("totalProfit").textContent = `$${(currentUser.totalProfit || 0).toLocaleString()}`;
+
+      const list = document.getElementById("transactionList");
+      list.innerHTML = "";
+      (currentUser.transactions || [])
+        .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
+        .forEach(t => {
+          const div = document.createElement("div");
+          div.className = "transaction-item";
+          const colorClass =
+            t.type === "deposit" ? "text-deposit" :
+            t.type === "profit" ? "text-profit" :
+            t.type === "investment" ? "text-invest" :
+            "text-withdraw";
+          div.innerHTML = `
+            <span class="${colorClass}">
+              ${t.type.toUpperCase()} — $${t.amount.toLocaleString()}
+            </span>
+            <span class="date">${new Date(t.date || t.createdAt).toLocaleString()}</span>
+          `;
+          list.appendChild(div);
+        });
+
+      attachActionButtons();
+    } catch (e) {
+      hideLoader();
+      console.error(e);
+      alert("Network error");
+    }
+  }
+
+  /* INIT */
+  loadDashboard();
+});
 </script>
 </body>
-</html>
+  </html>
